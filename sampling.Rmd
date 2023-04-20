@@ -1,0 +1,108 @@
+import data:
+```{r}
+library(stars)
+r = read_stars("NDVI2019_ClassificationImg_10m.tif") |> setNames("NDVI")
+r
+p = st_read("PixelCoordinates_Polygon.geojson")
+```
+
+transform polygon to UTM 22 S:
+```{r}
+p.utm = st_transform(p, st_crs(r))
+```
+
+compute the variance of the raster image:
+```{r}
+(v = var(as.vector(r[[1]])))
+```
+
+The different grid sizes:
+```{r}
+gridsizes = c(10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000)
+thinning = gridsizes / 10
+```
+
+Compute the standard errors associated with the different grid sizes, for
+random sampling:
+```{r}
+(n = prod(dim(r)) / (thinning^2))
+(se.random_sampling = sqrt(v/n))
+names(se.random_sampling) = gridsizes
+se.random_sampling
+```
+
+Now do this for regular sampling, using Ripley 1981:
+```{r}
+library(gstat)
+set.seed(1353)
+pts = st_sample(p.utm, 10000)
+r.sample = st_extract(r, pts)
+dist = c(10, 20, 50, 100, 200, 500, seq(1000, 10000, 500))
+v = variogram(NDVI~1, r.sample, boundaries = dist)
+plot(v)
+m = "Exp"
+v0 = vgm(.1, m, 100)
+(v.model = fit.variogram(v, vgm(.1, m, 500, add.to = v0)))
+plot(v, v.model)
+```
+
+Compute the mean point-point covariance function value, using random sampling
+(MC integration):
+```{r}
+n = 1e4
+make_unif_pts = function(bbox, n) {
+	x = runif(n, bbox["xmin"], bbox["xmax"])
+	y = runif(n, bbox["ymin"], bbox["ymax"])
+	as.matrix(cbind(x = x, y = y))
+}
+
+mean_cov = function(x, y, model) {
+	d = if (missing(y))
+			as.vector(as.matrix(dist(x)))
+		else {
+			all = rbind(x, y)
+			n1 = nrow(x)
+			n2 = nrow(y)
+			as.vector(as.matrix(dist(all))[(n1+1):(n1+n2),1:n1])
+		}
+	mean(variogramLine(v.model, covariance = TRUE, dist_vector = d, n)$gamma)
+}
+
+x = make_unif_pts(st_bbox(r), n)
+y = make_unif_pts(st_bbox(r), n)
+(C_mean = mean_cov(x, y, v.model))
+```
+
+Create a function that computes the SE using Ripley's 1981 eq. 3.4 (page 23),
+and use it:
+```{r}
+make_grid = function(size, bbox, n = Inf) {
+	x = seq(bbox["xmin"], bbox["xmax"], size)
+	y = seq(bbox["ymin"], bbox["ymax"], size)
+	grd = as.matrix(expand.grid(x = x, y = y))
+	if (n < nrow(grd))
+		grd = grd[sample(nrow(grd), n), ]
+	grd
+}
+
+compute_se = function(size, model, maxpts = 1e4, C_mean) {
+	grd = make_grid(size, st_bbox(r), maxpts)
+	pts = make_unif_pts(st_bbox(r), maxpts)
+	# eq 3.4, RHS part:
+	var = mean_cov(grd, model = v.model) -
+		2 * mean_cov(grd, pts, v.model) + C_mean
+	sqrt(var)
+}
+
+#sel = -(1:5)
+sel = TRUE
+se = sapply(gridsizes[sel], compute_se, model = v.model, C_mean = C_mean)
+names(se) = gridsizes[sel]
+se
+se.random_sampling 
+```
+
+Save:
+```{r}
+save.image("sampling.rda")
+```

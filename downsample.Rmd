@@ -1,0 +1,45 @@
+import data:
+```{r}
+library(stars)
+load("sampling.rda")
+r = read_stars(c("NDVI2019_ClassificationImg_10m.tif",
+  "NDVI2020_ClassificationImg_10m.tif",
+  "NDVI2021_ClassificationImg_10m.tif",
+  "NDVI2022_ClassificationImg_10m.tif")) |> merge() |> setNames("NDVI")
+r
+p = st_read("PixelCoordinates_Polygon.geojson")
+```
+
+```{r}
+library(dplyr)
+st_downsample(r, c(1,1,0)) |> st_apply(3, mean) |> pull(1)
+st_downsample(r, c(4,4,0)) |> st_apply(3, mean) |> pull(1)
+st_downsample(r, c(9,9,0)) |> st_apply(3, mean) |> pull(1)
+st_downsample(r, c(19,19,0)) |> st_apply(3, mean) |> pull(1)
+st_downsample(r, c(49,49,0)) |> st_apply(3, mean) |> pull(1)
+st_downsample(r, c(99,99,0)) |> st_apply(3, mean) |> pull(1)
+st_downsample(r, c(199,199,0)) |> st_apply(3, mean) |> pull(1)
+```
+
+```{r}
+year = 2019:2022
+r |> st_apply(3, mean) |> pull(1) -> x
+plt = function(ds, cellsize) {
+  st_downsample(r, c(ds,ds,0)) |> st_apply(3, mean) |> pull(1) -> y
+  e = se[cellsize]
+  ylim = c(min(1.15, min(y) - 2 * e), max(1.28, max(y) + 2 * e))
+  plot(year, x, type = 'l', ylim = ylim, col = 'grey', lwd = 7, ylab = "fraction forest")
+  lines(year, y, type = 'b')
+  arrows(x0=year, y0=y-2*e, x1=year, y1=y+2*e, code=3, angle=90, 
+	   length = 0.1, col="black")
+  title(paste(cellsize, "m regular sampling"))
+}
+plt(1, "20")
+plt(4, "50")
+plt(9, "100")
+plt(49, "500")
+plt(99, "1000")
+plt(199, "2000")
+plt(499, "5000")
+plt(999, "10000")
+```
