@@ -104,5 +104,6 @@ se.random_sampling
 
 Save:
 ```{r}
+rm(r) # big
 save.image("sampling.rda")
 ```
