@@ -24,22 +24,34 @@ st_downsample(r, c(199,199,0)) |> st_apply(3, mean) |> pull(1)
 ```{r}
 year = 2019:2022
 r |> st_apply(3, mean) |> pull(1) -> x
-plt = function(ds, cellsize) {
+calc_f = function(ds, cellsize) {
   st_downsample(r, c(ds,ds,0)) |> st_apply(3, mean) |> pull(1) -> y
-  e = se[cellsize]
+  e = se[[cellsize]]
   ylim = c(min(1.15, min(y) - 2 * e), max(1.28, max(y) + 2 * e))
-  plot(year, x, type = 'l', ylim = ylim, col = 'grey', lwd = 7, ylab = "fraction forest")
-  lines(year, y, type = 'b')
-  arrows(x0=year, y0=y-2*e, x1=year, y1=y+2*e, code=3, angle=90, 
-	   length = 0.1, col="black")
-  title(paste(cellsize, "m regular sampling"))
+  data.frame(year = year, ref = x-1, 
+	cellsize = as.numeric(cellsize), fraction = y-1, err = e,
+  	emin = pmax(0, y-1-2*e), emax = pmin(.3, y-1+2*e))
 }
-plt(1, "20")
-plt(4, "50")
-plt(9, "100")
-plt(49, "500")
-plt(99, "1000")
-plt(199, "2000")
-plt(499, "5000")
-plt(999, "10000")
+
+ds = c(1, 4, 9, 19, 49, 99, 199, 499, 999)
+cs = c( "20", "50", "100", "200", "500", "1000", "2000", "5000", "10000")
+all = do.call(rbind, mapply(calc_f, ds, cs, SIMPLIFY = FALSE))
+```
+
+```{r}
+#tiff("/tmp/res.tif", 15, 10, units = "in", res = 300)
+library(ggplot2)
+f = function(x) data.frame(cellsize = paste(x$cellsize, "m"))
+ggplot(all, aes(x = year, group = cellsize)) +
+  geom_line(aes(y = ref), lwd = 3, col = 'grey') +
+  geom_point(aes(y = fraction)) +
+  geom_line(aes(y = fraction), lty = 2) +
+  facet_wrap(cellsize ~., ncol = 3, labeller = f) + 
+  labs(x = "Year", y = "Forest Cover (fraction)",
+       title = "") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  geom_errorbar(aes(ymin=fraction-2*err, ymax=fraction+2*err),width=0.2) +
+  geom_errorbar(aes(ymin=emin, ymax=emax), width=0.2) +
+  ylim(0, .3)
+#dev.off()
 ```
